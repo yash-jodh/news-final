@@ -1,0 +1,18 @@
+.auth-container {
+    height: 100vh;
+    background-image: url('background.jpg');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+  
+  
+  .card {
+    width: 100%;
+    max-width: 400px;
+    background-color:rgba(0, 0, 0, 0.91);
+    color: white;
+    border-radius: 20px;
+    animation-duration: 1s;
+  }
+  
