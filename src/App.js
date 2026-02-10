@@ -1,7 +1,6 @@
 import './App.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import 'bootstrap/dist/js/bootstrap.bundle.min.js';
-import Auth from './Auth';
 import LoadingBar from "react-top-loading-bar";
 import {
   HashRouter as Router,
@@ -16,11 +15,6 @@ import News from './Component/News';
 const App = () => {
   const pageSize = 6;
   const [progress, setProgress] = useState([0]);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-
-  if (!isLoggedIn) {
-    return <Auth onLogin={() => setIsLoggedIn(true)} />;
-  }
 
   return (
     <div>
