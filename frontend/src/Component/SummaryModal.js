@@ -18,7 +18,7 @@ const SummaryModal = ({ article, onClose }) => {
     try {
       // Call YOUR backend — not Gemini directly
       // API key never leaves the server
-      const response = await fetch(`${BACKEND_URL}/api/summarize`, {
+      const response = await fetch(`${REACT_APP_BACKEND_URL}/api/summarize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
