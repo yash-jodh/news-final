@@ -3,12 +3,19 @@ import NewsItem from './NewsItem';
 import PropTypes from 'prop-types';
 import InfiniteScroll from 'react-infinite-scroll-component';
 
+// ─── IMPORTANT ───────────────────────────────────────────────────────────────
+// This component calls YOUR backend — NOT newsapi.org directly.
+// Set REACT_APP_BACKEND_URL in your Vercel environment variables.
+// Example: https://news-final-backend.onrender.com
+// ─────────────────────────────────────────────────────────────────────────────
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000';
+
 const News = (props) => {
-  const [articles, setArticles] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
+  const [articles,     setArticles]     = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [page,         setPage]         = useState(1);
   const [totalResults, setTotalResults] = useState(0);
-  const [error, setError] = useState(null);
+  const [error,        setError]        = useState(null);
 
   const capitalizeFirstLetter = (str) =>
     str.charAt(0).toUpperCase() + str.slice(1);
@@ -20,41 +27,42 @@ const News = (props) => {
   }, [props.category]);
 
   const buildUrl = (pageNum) => {
-    const apiKey = process.env.REACT_APP_NEWS_API_KEY;
-    if (props.category === 'anime') {
-      return `https://newsapi.org/v2/everything?q=anime&apiKey=${apiKey}&page=${pageNum}&pageSize=${props.pageSize}`;
-    }
-    return `https://newsapi.org/v2/top-headlines?country=${props.country}&category=${props.category}&apiKey=${apiKey}&page=${pageNum}&pageSize=${props.pageSize}`;
+    const params = new URLSearchParams({
+      category: props.category,
+      country:  props.country,
+      page:     pageNum,
+      pageSize: props.pageSize,
+    });
+    return `${BACKEND_URL}/api/news?${params}`;
   };
 
   const updateNews = async () => {
     try {
       props.setProgress(30);
       setError(null);
-
-      const apiKey = process.env.REACT_APP_NEWS_API_KEY;
-      if (!apiKey) throw new Error('API key is missing. Please add REACT_APP_NEWS_API_KEY to your .env file');
-
       setLoading(true);
       props.setProgress(60);
 
       const response = await fetch(buildUrl(1));
+      const data     = await response.json();
+
       if (!response.ok) {
-        if (response.status === 401) throw new Error('Invalid API key. Please check your credentials.');
-        if (response.status === 429) throw new Error('Too many requests. Please try again later.');
-        throw new Error(`Request failed with status ${response.status}`);
+        throw new Error(data.error || `Server error (${response.status})`);
       }
 
-      const data = await response.json();
-      if (data.status === 'error') throw new Error(data.message);
-
-      setArticles(data.articles || []);
+      setArticles(Array.isArray(data.articles) ? data.articles : []);
       setTotalResults(data.totalResults || 0);
       setPage(1);
       setLoading(false);
       props.setProgress(100);
+
     } catch (err) {
-      setError(err.message);
+      setError(
+        err.message.includes('Failed to fetch')
+          ? `Cannot reach backend. Check REACT_APP_BACKEND_URL is set to your Render URL in Vercel environment variables.`
+          : err.message
+      );
+      setArticles([]);
       setLoading(false);
       props.setProgress(100);
     }
@@ -64,15 +72,17 @@ const News = (props) => {
     try {
       const nextPage = page + 1;
       const response = await fetch(buildUrl(nextPage));
-      if (!response.ok) throw new Error('Failed to load more articles');
-      const data = await response.json();
-      if (data.articles) {
+      const data     = await response.json();
+
+      if (!response.ok) throw new Error(data.error || 'Failed to load more');
+
+      if (Array.isArray(data.articles) && data.articles.length > 0) {
         setArticles(prev => [...prev, ...data.articles]);
         setPage(nextPage);
         setTotalResults(data.totalResults || 0);
       }
     } catch (err) {
-      console.error('fetchMoreData error:', err);
+      console.error('fetchMoreData error:', err.message);
     }
   };
 
@@ -136,13 +146,13 @@ const News = (props) => {
                   style={{ animationDelay: `${(index % 12) * 0.05}s` }}
                 >
                   <NewsItem
-                    title={article.title || 'Untitled'}
+                    title={article.title        || 'Untitled'}
                     description={article.description || ''}
                     imageUrl={article.urlToImage}
                     newsUrl={article.url}
                     author={article.author}
                     date={article.publishedAt}
-                    source={article.source?.name || 'Unknown'}
+                    source={article.source?.name  || 'Unknown'}
                   />
                 </div>
               ))}
@@ -155,15 +165,15 @@ const News = (props) => {
 };
 
 News.defaultProps = {
-  country: 'us',
+  country:  'us',
   pageSize: 12,
   category: 'general',
 };
 
 News.propTypes = {
-  country: PropTypes.string,
-  pageSize: PropTypes.number,
-  category: PropTypes.string.isRequired,
+  country:     PropTypes.string,
+  pageSize:    PropTypes.number,
+  category:    PropTypes.string.isRequired,
   setProgress: PropTypes.func.isRequired,
 };
 
