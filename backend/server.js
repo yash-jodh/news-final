@@ -5,76 +5,136 @@ require('dotenv').config();
 const app  = express();
 const PORT = process.env.PORT || 5000;
 
-// ── Middleware ──────────────────────────────────────────────────────────────
+// ── Middleware ────────────────────────────────────────────────────────────────
 
 app.use(express.json());
 
-// Allow requests only from your React app
+const allowedOrigins = [
+  'http://localhost:3000',
+  process.env.FRONTEND_URL,
+].filter(Boolean);
+
 app.use(cors({
-  origin: [
-    'http://localhost:3000',          // React dev server
-    'https://your-app.vercel.app',    // ← Replace with your Vercel URL when deployed
-  ],
-  methods: ['POST'],
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true); // allow Postman/curl
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error(`CORS blocked: ${origin}`));
+  },
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type'],
 }));
 
-// ── Health Check ────────────────────────────────────────────────────────────
+// ── Health Check ──────────────────────────────────────────────────────────────
 
 app.get('/', (req, res) => {
-  res.json({ status: 'X-Times backend is running ✓' });
+  res.json({
+    status: 'X-Times backend running ✓',
+    routes: ['GET /api/news', 'POST /api/summarize'],
+    allowedOrigins,
+    env: {
+      GEMINI_API_KEY:  process.env.GEMINI_API_KEY  ? 'SET ✓' : 'MISSING ✗',
+      NEWS_API_KEY:    process.env.NEWS_API_KEY     ? 'SET ✓' : 'MISSING ✗',
+      FRONTEND_URL:    process.env.FRONTEND_URL     || 'not set',
+    },
+  });
 });
 
-// ── POST /api/summarize ─────────────────────────────────────────────────────
-// Receives: { title, description }
-// Returns:  { bullets: string[] }
+// ── GET /api/news ─────────────────────────────────────────────────────────────
+// Query params: category, country, page, pageSize
+// Returns: { articles: [], totalResults: number }
+//
+// NewsAPI FREE tier blocks all non-localhost requests (426 error).
+// Running it here on the server fixes that completely.
+
+app.get('/api/news', async (req, res) => {
+  try {
+    const {
+      category = 'general',
+      country  = 'us',
+      page     = 1,
+      pageSize = 12,
+    } = req.query;
+
+    const apiKey = process.env.NEWS_API_KEY;
+
+    if (!apiKey) {
+      return res.status(500).json({
+        error: 'NEWS_API_KEY not set. Add it in Render → Environment Variables.',
+      });
+    }
+
+    // Build NewsAPI URL — runs on server, not browser, so 426 never happens
+    let url;
+    if (category === 'anime') {
+      url = `https://newsapi.org/v2/everything?q=anime&apiKey=${apiKey}&page=${page}&pageSize=${pageSize}`;
+    } else {
+      url = `https://newsapi.org/v2/top-headlines?country=${country}&category=${category}&apiKey=${apiKey}&page=${page}&pageSize=${pageSize}`;
+    }
+
+    const response = await fetch(url);
+    const data     = await response.json();
+
+    if (!response.ok || data.status === 'error') {
+      return res.status(response.status || 500).json({
+        error: data.message || `NewsAPI error (${response.status})`,
+      });
+    }
+
+    return res.json({
+      articles:     data.articles     || [],
+      totalResults: data.totalResults || 0,
+    });
+
+  } catch (err) {
+    console.error('News fetch error:', err.message);
+    return res.status(500).json({ error: 'Internal server error: ' + err.message });
+  }
+});
+
+// ── POST /api/summarize ───────────────────────────────────────────────────────
+// Body:    { title: string, description: string }
+// Returns: { bullets: string[] }
 
 app.post('/api/summarize', async (req, res) => {
   try {
     const { title, description } = req.body;
 
-    // Validate input
     if (!title) {
       return res.status(400).json({ error: 'title is required' });
     }
 
-    const text = [title, description]
-      .filter(Boolean)
-      .join('. ')
-      .trim();
+    const text = [title, description].filter(Boolean).join('. ').trim();
 
     if (text.length < 30) {
       return res.status(400).json({ error: 'Not enough content to summarize' });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY; // No REACT_APP_ prefix — server only!
+    const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
-      return res.status(500).json({ error: 'Gemini API key not configured on server' });
+      return res.status(500).json({
+        error: 'GEMINI_API_KEY not set. Add it in Render → Environment Variables.',
+      });
     }
 
-    // Call Gemini — key stays on server, never sent to browser
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
     const geminiResponse = await fetch(geminiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text: `Summarize this news article in exactly 3 bullet points.
+        contents: [{
+          parts: [{
+            text: `Summarize this news article in exactly 3 bullet points.
 Each bullet must be one short, clear sentence covering the key facts.
 Start each bullet with "•" on its own line.
 Return ONLY the 3 bullets — no intro, no extra explanation.
 
 Article: ${text}`,
-              },
-            ],
-          },
-        ],
+          }],
+        }],
         generationConfig: {
-          temperature: 0.3,
+          temperature:     0.3,
           maxOutputTokens: 200,
         },
       }),
@@ -93,7 +153,6 @@ Article: ${text}`,
       return res.status(500).json({ error: 'Gemini returned empty response' });
     }
 
-    // Parse bullet lines
     const bullets = raw
       .split('\n')
       .map(line => line.replace(/^[•\-*\d.]\s*/, '').trim())
@@ -105,12 +164,24 @@ Article: ${text}`,
 
   } catch (err) {
     console.error('Summarize error:', err.message);
-    return res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: 'Internal server error: ' + err.message });
   }
 });
 
-// ── Start ───────────────────────────────────────────────────────────────────
+// ── 404 catch-all ─────────────────────────────────────────────────────────────
+
+app.use((req, res) => {
+  res.status(404).json({
+    error:           `Route not found: ${req.method} ${req.path}`,
+    availableRoutes: ['GET /', 'GET /api/news', 'POST /api/summarize'],
+  });
+});
+
+// ── Start ─────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {
-  console.log(`✓ X-Times backend running on http://localhost:${PORT}`);
+  console.log(`✓ Backend running on http://localhost:${PORT}`);
+  console.log(`✓ NEWS_API_KEY:   ${process.env.NEWS_API_KEY   ? 'SET ✓' : 'MISSING ✗'}`);
+  console.log(`✓ GEMINI_API_KEY: ${process.env.GEMINI_API_KEY ? 'SET ✓' : 'MISSING ✗'}`);
+  console.log(`✓ FRONTEND_URL:   ${process.env.FRONTEND_URL   || 'not set'}`);
 });
