@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/ThemeContext';
-import { useNavigate } from 'react-router-dom';
+
+
 
 const Login = () => {
   const { loginWithGoogle, authError } = useAuth();
-  const { isDark } = useTheme();
-  const navigate = useNavigate();
+
+
   const [isLoading, setIsLoading] = useState(false);
   const [currentDomain, setCurrentDomain] = useState('');
 
