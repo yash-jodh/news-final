@@ -9,19 +9,33 @@ const PORT = process.env.PORT || 5000;
 
 app.use(express.json());
 
+// CORS — more permissive configuration
 const allowedOrigins = [
   'http://localhost:3000',
   process.env.FRONTEND_URL,
+  // Allow any Vercel preview URL as fallback
 ].filter(Boolean);
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin) return callback(null, true); // allow Postman/curl
+    // Allow requests with no origin (Postman, curl, server-to-server)
+    if (!origin) return callback(null, true);
+    
+    // Allow localhost
+    if (origin.includes('localhost')) return callback(null, true);
+    
+    // Allow any *.vercel.app domain
+    if (origin.endsWith('.vercel.app')) return callback(null, true);
+    
+    // Allow specifically configured origins
     if (allowedOrigins.includes(origin)) return callback(null, true);
+    
+    console.log(`CORS blocked origin: ${origin}`);
     return callback(new Error(`CORS blocked: ${origin}`));
   },
-  methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type'],
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
 }));
 
 // ── Health Check ──────────────────────────────────────────────────────────────
@@ -40,11 +54,6 @@ app.get('/', (req, res) => {
 });
 
 // ── GET /api/news ─────────────────────────────────────────────────────────────
-// Query params: category, country, page, pageSize
-// Returns: { articles: [], totalResults: number }
-//
-// NewsAPI FREE tier blocks all non-localhost requests (426 error).
-// Running it here on the server fixes that completely.
 
 app.get('/api/news', async (req, res) => {
   try {
@@ -63,7 +72,6 @@ app.get('/api/news', async (req, res) => {
       });
     }
 
-    // Build NewsAPI URL — runs on server, not browser, so 426 never happens
     let url;
     if (category === 'anime') {
       url = `https://newsapi.org/v2/everything?q=anime&apiKey=${apiKey}&page=${page}&pageSize=${pageSize}`;
@@ -92,8 +100,6 @@ app.get('/api/news', async (req, res) => {
 });
 
 // ── POST /api/summarize ───────────────────────────────────────────────────────
-// Body:    { title: string, description: string }
-// Returns: { bullets: string[] }
 
 app.post('/api/summarize', async (req, res) => {
   try {
@@ -184,4 +190,5 @@ app.listen(PORT, () => {
   console.log(`✓ NEWS_API_KEY:   ${process.env.NEWS_API_KEY   ? 'SET ✓' : 'MISSING ✗'}`);
   console.log(`✓ GEMINI_API_KEY: ${process.env.GEMINI_API_KEY ? 'SET ✓' : 'MISSING ✗'}`);
   console.log(`✓ FRONTEND_URL:   ${process.env.FRONTEND_URL   || 'not set'}`);
+  console.log(`✓ CORS: Allowing all *.vercel.app domains`);
 });
