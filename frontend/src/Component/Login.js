@@ -1,21 +1,28 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-// import { useTheme } from '../context/ThemeContext';
+import { useTheme } from '../context/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 
 const Login = () => {
   const { loginWithGoogle, authError } = useAuth();
-  // const { isDark } = useTheme();
+  const { isDark } = useTheme();
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
+  const [currentDomain, setCurrentDomain] = useState('');
+
+  // Show current domain to help debug Firebase authorized domains
+  useEffect(() => {
+    setCurrentDomain(window.location.hostname);
+  }, []);
 
   const handleGoogleLogin = async () => {
     setIsLoading(true);
     try {
-      const user = await loginWithGoogle();
-      if (user) navigate('/');
-    } finally {
+      await loginWithGoogle();
+      // signInWithRedirect doesn't return immediately - redirect happens in AuthContext
+    } catch (err) {
       setIsLoading(false);
+      console.error('Login button error:', err);
     }
   };
 
@@ -43,9 +50,29 @@ const Login = () => {
           </div>
         </div>
 
+        {/* Show current domain to help user debug Firebase */}
+        <div style={{
+          background: 'rgba(255,193,7,0.1)',
+          border: '1px solid rgba(255,193,7,0.3)',
+          borderRadius: '8px',
+          padding: '10px',
+          marginBottom: '16px',
+          fontSize: '0.85rem'
+        }}>
+          <strong>Current domain:</strong> <code>{currentDomain}</code>
+          <br />
+          <small style={{ opacity: 0.8 }}>
+            Add this exact domain to Firebase → Authentication → Settings → Authorized domains
+          </small>
+        </div>
+
         {authError && (
           <div className="login-error">
             {authError}
+            <br />
+            <small style={{ marginTop: '8px', display: 'block', opacity: 0.9 }}>
+              Make sure <code>{currentDomain}</code> is added to Firebase Authorized Domains
+            </small>
           </div>
         )}
 
@@ -57,7 +84,7 @@ const Login = () => {
           {isLoading ? (
             <span className="btn-loading">
               <span className="spinner-border spinner-border-sm me-2"></span>
-              Signing in...
+              Redirecting to Google...
             </span>
           ) : (
             <>
